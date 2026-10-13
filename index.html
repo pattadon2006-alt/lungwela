@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#4c5fd5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ลงเวลา P&P</title>
+<style>
+  /* ใช้กลางแจ้ง ตอนตีสี่ ใส่ถุงมือ — ตัวใหญ่ ปุ่มใหญ่ สีต่างกันชัด */
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --ink: #1d2433; --muted: #6b7280;
+    --out: #d9480f; --out-bg: #fff4e6; --in: #1c7c4c; --in-bg: #ebfbee;
+    --brand: #4c5fd5; --err: #c92a2a; --err-bg: #fff5f5; --line: #e5e7eb;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Sarabun", "Noto Sans Thai", "Segoe UI", sans-serif; font-size: 18px; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 16px; min-height: 100vh; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--card); border-radius: 16px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .muted { color: var(--muted); font-size: 15px; }
+  .big-btn { display: block; width: 100%; border: 0; border-radius: 16px; padding: 22px 16px;
+    font-size: 24px; font-weight: 700; color: #fff; background: var(--brand); cursor: pointer; font-family: inherit; }
+  .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .choice button { border: 3px solid transparent; border-radius: 18px; padding: 34px 8px; font-size: 30px;
+    font-weight: 800; cursor: pointer; font-family: inherit; }
+  .choice .out { background: var(--out-bg); color: var(--out); }
+  .choice .in { background: var(--in-bg); color: var(--in); }
+  .choice .hint.out { border-color: var(--out); box-shadow: 0 0 0 4px rgba(217,72,15,.15); }
+  .choice .hint.in { border-color: var(--in); box-shadow: 0 0 0 4px rgba(28,124,76,.15); }
+  .choice small { display: block; font-size: 14px; font-weight: 600; margin-top: 6px; }
+  .result { text-align: center; padding: 28px 16px; border-radius: 18px; }
+  .result.ok-out { background: var(--out-bg); color: var(--out); }
+  .result.ok-in { background: var(--in-bg); color: var(--in); }
+  .result.err { background: var(--err-bg); color: var(--err); font-size: 18px; }
+  .result .tick { font-size: 56px; line-height: 1; }
+  .result .time { font-size: 52px; font-weight: 800; margin: 6px 0; }
+  .list { margin: 0; padding: 0; list-style: none; }
+  .list li { display: flex; justify-content: space-between; padding: 10px 2px; border-bottom: 1px solid var(--line); font-size: 17px; }
+  .list li:last-child { border-bottom: 0; }
+  .tag { font-weight: 700; }
+  .tag.out { color: var(--out); } .tag.in { color: var(--in); }
+  select, input { width: 100%; font-size: 20px; padding: 14px; border: 1px solid var(--line); border-radius: 12px;
+    font-family: inherit; background: #fff; margin-top: 8px; }
+  input.pin { letter-spacing: 12px; text-align: center; font-size: 30px; font-weight: 700; }
+  .gps { font-size: 14px; color: var(--muted); text-align: center; }
+  .gps.good { color: var(--in); }
+  .center { text-align: center; }
+  .spinner { width: 36px; height: 36px; border: 4px solid var(--line); border-top-color: var(--brand);
+    border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tip { font-size: 14px; color: var(--muted); background: #eef0fb; border-radius: 12px; padding: 12px 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="card center"><div class="spinner"></div><div class="muted">กำลังเปิด…</div></div>
+</div>
+
+<script>
+  // ============================================================
+  // ตั้งค่า — แก้บรรทัดนี้บรรทัดเดียว หลัง deploy Apps Script เป็นเวอร์ชันใหม่
+  // ============================================================
+  const API_URL = 'https://script.google.com/macros/s/AKfycbw3t7p1fnEA8vIFgvUOItPA4ropVuOOmlAw7DNpXHJBHJ3x1cXKukeCQIcrXByfP7fSOA/exec';   // ที่ลงท้ายด้วย /exec
+
+  // ============================================================
+  const app = document.getElementById('app');
+  let me = null;      // { name, suggest, today }
+  let pos = null;     // { lat, lng, acc, at }
+
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const render = html => { app.innerHTML = html; window.scrollTo(0, 0); };
+  const loading = msg => render('<div class="card center"><div class="spinner"></div><div class="muted">' + esc(msg) + '</div></div>');
+
+  // ---------- เก็บข้อมูลในมือถือ ----------
+  // ใช้ localStorage จำว่ามือถือเครื่องนี้เป็นของใคร ถ้าเบราว์เซอร์ไม่ให้เก็บ (โหมดไม่ระบุตัวตน) ระบบใช้ไม่ได้
+  const store = {
+    get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+    set(k, v) { try { localStorage.setItem(k, v); return localStorage.getItem(k) === v; } catch (e) { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+  function deviceId() {
+    let id = store.get('pp_device');
+    if (!id) {
+      id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      if (!store.set('pp_device', id)) return '';
+    }
+    return id;
+  }
+
+  // รหัสประตูมาจากลิงก์ใน QR (?g=...) จำไว้ เผื่อเปิดจากไอคอนบนหน้าจอโฮมซึ่งอาจไม่มีรหัสติดมา
+  function gateCode() {
+    const g = new URLSearchParams(location.search).get('g');
+    if (g) store.set('pp_gate', g);
+    return g || store.get('pp_gate');
+  }
+
+  // ---------- GPS ----------
+  // เปิดตั้งแต่เข้าหน้า ไม่ใช่ตอนกดปุ่ม — GPS ต้องใช้เวลาหาดาวเทียม
+  function startGps() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.watchPosition(
+      p => { pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() }; updateGpsLine(); },
+      () => updateGpsLine(),
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 }
+    );
+  }
+  function updateGpsLine() {
+    const el = document.getElementById('gps');
+    if (!el) return;
+    if (!pos) { el.className = 'gps'; el.textContent = '📍 กำลังหาตำแหน่ง… (ต้องเปิด GPS และกดอนุญาต)'; return; }
+    const good = pos.acc <= 60;
+    el.className = 'gps' + (good ? ' good' : '');
+    el.textContent = '📍 ตำแหน่ง ' + (good ? 'พร้อม' : 'ยังไม่แม่น') + ' (คลาด ±' + Math.round(pos.acc) + ' ม.)';
+  }
+  function freshPosition() {
+    return new Promise(resolve => {
+      if (pos && Date.now() - pos.at < 30000) return resolve(pos);
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        p => { pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() }; resolve(pos); },
+        () => resolve(pos),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+  }
+
+  async function api(action, extra) {
+    const body = Object.assign({ action: action, name: store.get('pp_name'), device: deviceId() }, extra || {});
+    // ไม่ใส่ header Content-Type เพื่อให้เป็น "simple request" — Apps Script ไม่รองรับ CORS preflight
+    const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
+    return res.json();
+  }
+
+  // ---------- หน้าจอ ----------
+  function showError(msg, label, action) {
+    render(
+      '<div class="result err"><div class="tick">⚠️</div><p>' + esc(msg) + '</p></div>' +
+      '<button class="big-btn" id="errBtn">' + esc(label || 'ลองใหม่') + '</button>'
+    );
+    document.getElementById('errBtn').onclick = action || (() => location.reload());
+  }
+
+  async function showLogin(note) {
+    loading('กำลังโหลดรายชื่อ…');
+    let r;
+    try { r = await api('employees'); } catch (e) { return showError('ต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสัญญาณเน็ต'); }
+    if (!r.ok) return showError(r.error);
+    const opts = r.employees.map(n => '<option>' + esc(n) + '</option>').join('');
+    render(
+      '<div class="card"><h1>เข้าใช้ครั้งแรก</h1>' +
+      '<div class="muted">เลือกชื่อตัวเอง แล้วใส่ PIN ที่ได้จากห้องขาย<br>ทำครั้งเดียว ครั้งต่อไปกดปุ่มเดียวจบ</div>' +
+      (note ? '<p style="color:var(--err);margin:10px 0 0">' + esc(note) + '</p>' : '') + '</div>' +
+      '<div class="card">' +
+        '<select id="pick"><option value="">— เลือกชื่อ —</option>' + opts + '</select>' +
+        '<input id="pin" class="pin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" autocomplete="off">' +
+      '</div>' +
+      '<button class="big-btn" id="loginBtn">เข้าใช้</button>' +
+      '<div class="tip">มือถือเครื่องนี้จะผูกกับชื่อที่เลือก ใช้ลงเวลาให้คนอื่นไม่ได้ ถ้าเปลี่ยนมือถือ ให้แจ้งห้องขาย</div>'
+    );
+    document.getElementById('loginBtn').onclick = async () => {
+      const name = document.getElementById('pick').value;
+      const pin = document.getElementById('pin').value.trim();
+      if (!name) return alert('เลือกชื่อก่อน');
+      if (!pin) return alert('ใส่ PIN ก่อน');
+      loading('กำลังตรวจ PIN…');
+      let res;
+      try { res = await api('login', { name: name, pin: pin }); } catch (e) { return showError('ต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสัญญาณเน็ต'); }
+      if (!res.ok) return showLogin(res.error);
+      store.set('pp_name', name);
+      me = res;
+      showHome(true);
+    };
+  }
+
+  function showHome(firstTime) {
+    const s = me.suggest === 'เข้า' ? 'in' : 'out';
+    const rows = (me.today || []).slice().reverse().map(x =>
+      '<li><span class="tag ' + (x.dir === 'ออก' ? 'out' : 'in') + '">' + esc(x.dir) + '</span>' +
+      '<span>' + esc(x.time) + (x.how === 'ลงแทน' ? ' <span class="muted">(ห้องขายลงแทน)</span>' : '') + '</span></li>'
+    ).join('');
+    render(
+      '<div class="card"><div class="muted">สวัสดี</div><h1>' + esc(me.name) + '</h1></div>' +
+      '<div class="choice">' +
+        '<button class="out ' + (s === 'out' ? 'hint out' : '') + '" data-dir="ออก">⬆ ออก' + (s === 'out' ? '<small>ระบบเดาว่าอันนี้</small>' : '') + '</button>' +
+        '<button class="in ' + (s === 'in' ? 'hint in' : '') + '" data-dir="เข้า">⬇ เข้า' + (s === 'in' ? '<small>ระบบเดาว่าอันนี้</small>' : '') + '</button>' +
+      '</div>' +
+      '<div id="gps" class="gps"></div>' +
+      '<div class="card"><div style="font-weight:700;margin-bottom:6px">24 ชั่วโมงที่ผ่านมา</div>' +
+      (rows ? '<ul class="list">' + rows + '</ul>' : '<div class="muted">ยังไม่มีการลงเวลา</div>') + '</div>' +
+      (firstTime ? '<div class="tip">💡 ครั้งหน้าเปิดง่ายขึ้น: กดเมนูเบราว์เซอร์ แล้วเลือก <b>"เพิ่มไปที่หน้าจอหลัก"</b> จะได้ไอคอนลงเวลาบนหน้าจอ</div>' : '')
+    );
+    updateGpsLine();
+    document.querySelectorAll('.choice button').forEach(b => b.onclick = () => submitScan(b.dataset.dir));
+  }
+
+  async function submitScan(dir) {
+    loading('กำลังอ่านตำแหน่ง…');
+    const p = await freshPosition();
+    if (!p) return showError('อ่านตำแหน่งไม่ได้ เปิด GPS แล้วกดอนุญาตให้เว็บนี้ใช้ตำแหน่ง', 'กลับ', () => showHome());
+
+    loading('กำลังบันทึก…');
+    let r;
+    try { r = await api('scan', { gate: gateCode(), dir: dir, lat: p.lat, lng: p.lng, acc: p.acc }); }
+    catch (e) { return showError('ส่งข้อมูลไม่สำเร็จ ตรวจสัญญาณเน็ตแล้วลองใหม่', 'ลองใหม่', () => submitScan(dir)); }
+
+    if (!r.ok) {
+      if (r.code === 'login') { store.del('pp_name'); return showLogin(r.error); }
+      if (r.code === 'far') { pos = null; return showError(r.error, 'ลองใหม่', () => submitScan(dir)); }
+      return showError(r.error, 'กลับ', () => showHome());
+    }
+
+    const cls = r.dir === 'ออก' ? 'ok-out' : 'ok-in';
+    render(
+      '<div class="result ' + cls + '"><div class="tick">✓</div>' +
+      '<div style="font-size:24px;font-weight:700">' + esc(r.dir) + '</div>' +
+      '<div class="time">' + esc(r.time) + '</div>' +
+      '<div>' + esc(r.name) + '</div>' +
+      (r.dup ? '<p class="muted">' + esc(r.message) + '</p>' : '') + '</div>' +
+      '<button class="big-btn" id="doneBtn">เสร็จแล้ว</button>'
+    );
+    document.getElementById('doneBtn').onclick = () => location.reload();
+  }
+
+  // ---------- เริ่ม ----------
+  (async function main() {
+    if (!gateCode()) {
+      return render('<div class="card center"><div style="font-size:48px">📷</div><h1>สแกน QR ที่ประตูโรงงาน</h1>' +
+        '<div class="muted">เปิดกล้องมือถือ ส่อง QR ที่ติดอยู่ที่ประตู เพื่อเข้าหน้าลงเวลา</div></div>');
+    }
+    if (!deviceId()) {
+      return showError('เบราว์เซอร์นี้ไม่ให้เก็บข้อมูล (อาจเปิดในโหมดไม่ระบุตัวตน) ให้เปิดด้วย Chrome หรือ Safari แบบปกติ');
+    }
+    startGps();
+    if (!store.get('pp_name')) return showLogin();
+
+    loading('กำลังโหลดข้อมูล…');
+    let d;
+    try { d = await api('me'); } catch (e) { return showError('ต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสัญญาณเน็ต'); }
+    if (!d.ok) {
+      if (d.code === 'login') { store.del('pp_name'); return showLogin(d.error); }
+      return showError(d.error);
+    }
+    me = d;
+    showHome();
+  })();
+</script>
+</body>
+</html>

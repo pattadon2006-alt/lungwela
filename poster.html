@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>โปสเตอร์ QR ลงเวลา</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<style>
+  /* เปิดหน้านี้จาก GitHub Pages แล้วกด Ctrl+P พิมพ์ลง A4 */
+  @page { size: A4; margin: 0; }
+  body { margin: 0; font-family: "Sarabun", "Noto Sans Thai", sans-serif; color: #1d2433; background: #fff; }
+  .page { width: 210mm; min-height: 297mm; box-sizing: border-box; padding: 16mm; margin: 0 auto;
+    display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .top { font-size: 15pt; color: #4c5fd5; font-weight: 700; }
+  h1 { font-size: 40pt; margin: 4mm 0 2mm; line-height: 1.15; }
+  .sub { font-size: 17pt; color: #555; margin-bottom: 8mm; }
+  #qr { width: 135mm; height: 135mm; padding: 4mm; border: 2.5mm solid #1d2433; border-radius: 6mm; box-sizing: border-box; }
+  #qr svg { width: 100%; height: 100%; display: block; }
+  .steps { margin-top: 9mm; font-size: 17pt; text-align: left; line-height: 1.75; }
+  .steps b { display: inline-block; width: 10mm; height: 10mm; line-height: 10mm; text-align: center; border-radius: 50%;
+    background: #4c5fd5; color: #fff; font-size: 13pt; margin-right: 3mm; }
+  .foot { margin-top: auto; font-size: 10pt; color: #999; word-break: break-all; }
+  .ctrl { max-width: 210mm; margin: 12px auto; padding: 12px 16px; background: #eef0fb; border-radius: 10px; font-size: 15px; }
+  .ctrl input { font-size: 15px; padding: 6px 8px; width: 220px; }
+  @media print { .ctrl { display: none; } }
+</style>
+</head>
+<body>
+<div class="ctrl">
+  รหัสประตู (ต้องตรงกับชีต ตั้งค่าสแกน):
+  <input id="code" value="PP-GATE-78509A21" oninput="draw()">
+  — แล้วกด Ctrl+P เพื่อพิมพ์
+</div>
+<div class="page">
+  <div class="top">P&amp;P ICE · สายส่ง</div>
+  <h1>สแกนลงเวลา ออก – เข้า</h1>
+  <div class="sub">พนักงานทุกคนในรถ ลงเวลาคนละครั้ง ทั้งตอนออกและตอนเข้า</div>
+  <div id="qr"></div>
+  <div class="steps">
+    <div><b>1</b>เปิด<u>กล้องมือถือ</u> ส่องป้ายนี้ แล้วแตะลิงก์ที่ขึ้นมา</div>
+    <div><b>2</b>ครั้งแรก เลือกชื่อตัวเอง ใส่ <u>PIN</u> จากห้องขาย</div>
+    <div><b>3</b>กด <u>ออก</u> หรือ <u>เข้า</u> — เห็นเครื่องหมาย ✓ คือเสร็จ</div>
+  </div>
+  <div class="foot">ลงเวลาไม่ได้ / GPS ไม่ผ่าน → แจ้งห้องขายให้ลงเวลาแทน<br><span id="url"></span></div>
+</div>
+<script>
+  function draw() {
+    const code = document.getElementById('code').value.trim();
+    // ลิงก์ของหน้าลงเวลา = โฟลเดอร์เดียวกับหน้านี้
+    const base = location.href.replace(/poster\.html.*$/, '');
+    const url = base + '?g=' + encodeURIComponent(code);
+    const q = qrcode(0, 'H');   // ระดับ H ทนรอยขีดข่วนได้ราว 30%
+    q.addData(url);
+    q.make();
+    document.getElementById('qr').innerHTML = q.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+    document.getElementById('url').textContent = url;
+  }
+  const g = new URLSearchParams(location.search).get('g');
+  if (g) document.getElementById('code').value = g;
+  draw();
+</script>
+</body>
+</html>
