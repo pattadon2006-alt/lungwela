@@ -50,6 +50,10 @@
   .spinner { width: 36px; height: 36px; border: 4px solid var(--line); border-top-color: var(--brand);
     border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  input.mile { text-align: center; font-size: 40px; font-weight: 800; letter-spacing: 2px; padding: 18px 10px; }
+  .row2 { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; }
+  .ghost-btn { display: block; width: 100%; border: 2px solid var(--line); border-radius: 16px; padding: 20px 8px;
+    font-size: 20px; font-weight: 700; color: var(--muted); background: #fff; cursor: pointer; font-family: inherit; }
   .tip { font-size: 14px; color: var(--muted); background: #eef0fb; border-radius: 12px; padding: 12px 14px; line-height: 1.6; }
 </style>
 </head>
@@ -179,7 +183,7 @@
     const s = me.suggest === 'เข้า' ? 'in' : 'out';
     const rows = (me.today || []).slice().reverse().map(x =>
       '<li><span class="tag ' + (x.dir === 'ออก' ? 'out' : 'in') + '">' + esc(x.dir) + '</span>' +
-      '<span>' + esc(x.time) + (x.how === 'ลงแทน' ? ' <span class="muted">(ห้องขายลงแทน)</span>' : '') + '</span></li>'
+      '<span>' + esc(x.time) + (x.mile ? ' · ไมล์ ' + Number(x.mile).toLocaleString() : '') + (x.how === 'ลงแทน' ? ' <span class="muted">(ห้องขายลงแทน)</span>' : '') + '</span></li>'
     ).join('');
     render(
       '<div class="card"><div class="muted">สวัสดี</div><h1>' + esc(me.name) + '</h1></div>' +
@@ -193,22 +197,47 @@
       (firstTime ? '<div class="tip">💡 ครั้งหน้าเปิดง่ายขึ้น: กดเมนูเบราว์เซอร์ แล้วเลือก <b>"เพิ่มไปที่หน้าจอหลัก"</b> จะได้ไอคอนลงเวลาบนหน้าจอ</div>' : '')
     );
     updateGpsLine();
-    document.querySelectorAll('.choice button').forEach(b => b.onclick = () => submitScan(b.dataset.dir));
+    document.querySelectorAll('.choice button').forEach(b => b.onclick = () => askMile(b.dataset.dir));
   }
 
-  async function submitScan(dir) {
+  // ถามเลขไมล์ก่อนบันทึกทุกครั้ง
+  function askMile(dir, errMsg, keep) {
+    const isOut = dir === 'ออก';
+    const last = me.lastMile ? Number(me.lastMile).toLocaleString() : '';
+    render(
+      '<div class="card center"><div class="tag ' + (isOut ? 'out' : 'in') + '" style="font-size:28px">' + (isOut ? '⬆ ออก' : '⬇ เข้า') + '</div>' +
+      '<h1 style="margin-top:8px">กรอกเลขไมล์รถ</h1>' +
+      '<div class="muted">ดูเลขบนหน้าปัดรถ แล้วพิมพ์ตัวเลขทั้งหมด</div>' +
+      '<input id="mile" class="mile" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="เลขไมล์" value="' + esc(keep || '') + '">' +
+      (last ? '<div class="muted">เลขล่าสุดที่คุณกรอก: ' + esc(last) + '</div>' : '') +
+      (errMsg ? '<div class="result err" style="margin-top:12px;padding:14px">' + esc(errMsg) + '</div>' : '') + '</div>' +
+      '<div class="row2"><button class="ghost-btn" id="mileBack">กลับ</button>' +
+      '<button class="big-btn" id="mileOk">ยืนยัน ' + esc(dir) + '</button></div>'
+    );
+    const inp = document.getElementById('mile');
+    inp.focus();
+    document.getElementById('mileBack').onclick = () => showHome();
+    document.getElementById('mileOk').onclick = () => {
+      const v = inp.value.replace(/[,\s]/g, '');
+      if (!/^\d+$/.test(v) || Number(v) <= 0) return askMile(dir, 'กรุณากรอกเลขไมล์เป็นตัวเลข', inp.value);
+      submitScan(dir, Number(v));
+    };
+  }
+
+  async function submitScan(dir, mile) {
     loading('กำลังอ่านตำแหน่ง…');
     const p = await freshPosition();
     if (!p) return showError('อ่านตำแหน่งไม่ได้ เปิด GPS แล้วกดอนุญาตให้เว็บนี้ใช้ตำแหน่ง', 'กลับ', () => showHome());
 
     loading('กำลังบันทึก…');
     let r;
-    try { r = await api('scan', { gate: gateCode(), dir: dir, lat: p.lat, lng: p.lng, acc: p.acc }); }
-    catch (e) { return showError('ส่งข้อมูลไม่สำเร็จ ตรวจสัญญาณเน็ตแล้วลองใหม่', 'ลองใหม่', () => submitScan(dir)); }
+    try { r = await api('scan', { gate: gateCode(), dir: dir, mile: mile, lat: p.lat, lng: p.lng, acc: p.acc }); }
+    catch (e) { return showError('ส่งข้อมูลไม่สำเร็จ ตรวจสัญญาณเน็ตแล้วลองใหม่', 'ลองใหม่', () => submitScan(dir, mile)); }
 
     if (!r.ok) {
       if (r.code === 'login') { store.del('pp_name'); return showLogin(r.error); }
-      if (r.code === 'far') { pos = null; return showError(r.error, 'ลองใหม่', () => submitScan(dir)); }
+      if (r.code === 'far') { pos = null; return showError(r.error, 'ลองใหม่', () => submitScan(dir, mile)); }
+      if (r.code === 'mile') return askMile(dir, r.error, String(mile));
       return showError(r.error, 'กลับ', () => showHome());
     }
 
@@ -218,6 +247,7 @@
       '<div style="font-size:24px;font-weight:700">' + esc(r.dir) + '</div>' +
       '<div class="time">' + esc(r.time) + '</div>' +
       '<div>' + esc(r.name) + '</div>' +
+      (r.mile ? '<div style="margin-top:6px">เลขไมล์ ' + Number(r.mile).toLocaleString() + '</div>' : '') +
       (r.dup ? '<p class="muted">' + esc(r.message) + '</p>' : '') + '</div>' +
       '<button class="big-btn" id="doneBtn">เสร็จแล้ว</button>'
     );
