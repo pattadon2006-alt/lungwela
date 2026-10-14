@@ -207,16 +207,19 @@
     render(
       '<div class="card center"><div class="tag ' + (isOut ? 'out' : 'in') + '" style="font-size:28px">' + (isOut ? '⬆ ออก' : '⬇ เข้า') + '</div>' +
       '<h1 style="margin-top:8px">กรอกเลขไมล์รถ</h1>' +
-      '<div class="muted">ดูเลขบนหน้าปัดรถ แล้วพิมพ์ตัวเลขทั้งหมด</div>' +
+      '<div class="muted">ดูเลขบนหน้าปัดรถ แล้วพิมพ์ตัวเลขทั้งหมด' + (me.requireMile ? '' : '<br>ถ้ารถคันนี้อ่านเลขไมล์ไม่ได้ กด "ข้าม"') + '</div>' +
       '<input id="mile" class="mile" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="เลขไมล์" value="' + esc(keep || '') + '">' +
       (last ? '<div class="muted">เลขล่าสุดที่คุณกรอก: ' + esc(last) + '</div>' : '') +
       (errMsg ? '<div class="result err" style="margin-top:12px;padding:14px">' + esc(errMsg) + '</div>' : '') + '</div>' +
       '<div class="row2"><button class="ghost-btn" id="mileBack">กลับ</button>' +
-      '<button class="big-btn" id="mileOk">ยืนยัน ' + esc(dir) + '</button></div>'
+      '<button class="big-btn" id="mileOk">ยืนยัน ' + esc(dir) + '</button></div>' +
+      (me.requireMile ? '' : '<button class="ghost-btn" id="mileSkip" style="margin-top:2px">ข้าม — อ่านเลขไมล์ไม่ได้</button>')
     );
     const inp = document.getElementById('mile');
     inp.focus();
     document.getElementById('mileBack').onclick = () => showHome();
+    const sk = document.getElementById('mileSkip');
+    if (sk) sk.onclick = () => submitScan(dir, '');
     document.getElementById('mileOk').onclick = () => {
       const v = inp.value.replace(/[,\s]/g, '');
       if (!/^\d+$/.test(v) || Number(v) <= 0) return askMile(dir, 'กรุณากรอกเลขไมล์เป็นตัวเลข', inp.value);
